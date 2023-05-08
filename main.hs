@@ -85,8 +85,6 @@ funcao = do {
 -- data Programa = Prog [Funcao] [(Id, [Var], Bloco)] [Var] Bloco deriving Show
 
 
-
-
 lingDef = emptyDef {
         T.commentStart = "{-"
     ,   T.commentEnd = "-}"
