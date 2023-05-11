@@ -51,12 +51,32 @@ comando = do {
         b<-bloco;
         return (While l b);
     }
+    <|> try(do {
+        n<-identifier;
+        symbol "(";
+        e<-commaSep expr;
+        symbol ")";
+        semi;
+        return (Proc n e);
+    })
     <|> do {
         n <- identifier;
         reservedOp "=";
         e<-expr;
         semi;
         return (Atrib n e);
+    }
+    <|> do {
+        reserved "print";
+        e<- parens expr;
+        semi;
+        return (Imp e);
+    }
+    <|> do {
+        reserved "read";
+        x<- parens identifier;
+        semi;
+        return (Leitura x);
     }
 
 listaCmd = do {
@@ -112,7 +132,7 @@ lingDef = emptyDef {
     ,   T.identStart = letter <|> char '_'
     ,   T.identLetter = alphaNum <|> char '_'
     ,   T.reservedOpNames = ["+", "-", "/", "*", "&&", "||", "!", "<", ">", "<=", ">=", "==", "/=", "="]
-    ,   T.reservedNames = ["while", "return", "if", "else", "print"]
+    ,   T.reservedNames = ["while", "return", "if", "else", "print", "read"]
 }
 
 lexico = T.makeTokenParser lingDef
@@ -151,6 +171,12 @@ expr = buildExpressionParser tabela fator
     <?> "expression"
 
 fator = parens expr
+    <|> try(do {
+        n <- identifier;
+        symbol "(";
+        le<- commaSep expr;
+        symbol ")";
+        return (Chamada n le)})
     <|> try (do {n <- float; return (Const (CDouble n))})
     <|> do {n <- natural; return (Const (CInt n))}
     <|> do {n <- identifier; return (IdVar n)}
