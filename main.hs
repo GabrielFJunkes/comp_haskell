@@ -8,7 +8,7 @@ import System.IO
 
 type Id = String
 data Tipo = TDouble | TInt | TString | TVoid deriving Show --
-data TCons = CDouble Double | CInt Integer deriving Show
+data TCons = CDouble Double | CInt Integer | CString String deriving Show
 data Expr = Expr :+: Expr | Expr :-: Expr | Expr :*: Expr | Expr :/: Expr | Neg Expr | Const TCons | IdVar String | Chamada Id [Expr] | Lit String deriving Show
 data ExprR = Expr :==: Expr | Expr :/=: Expr | Expr :<: Expr | Expr :>: Expr | Expr :<=: Expr | Expr :>=: Expr deriving Show
 data ExprL = ExprL :&: ExprL | ExprL :|: ExprL | Not ExprL | Rel ExprR deriving Show
@@ -51,14 +51,14 @@ comando = do {
         b<-bloco;
         return (While l b);
     }
-    <|> try(do {
-        n<-identifier;
-        symbol "(";
-        e<-commaSep expr;
-        symbol ")";
-        semi;
-        return (Proc n e);
-    })
+    <|> try (do {
+         n<-identifier;
+         symbol "(";
+         e<-commaSep expr;
+         symbol ")";
+         semi;
+         return (Proc n e);
+     })
     <|> do {
         n <- identifier;
         reservedOp "=";
@@ -88,6 +88,7 @@ listaCmd = do {
 
 bloco = do {
         symbol "{";
+
         cs <- listaCmd;
         symbol "}";
         return cs;
@@ -122,8 +123,35 @@ funcao = do {
     return (n :->: (lv, t))
 }
 
--- data Programa = Prog [Funcao] [(Id, [Var], Bloco)] [Var] Bloco deriving Show
+funcaoEBloco = do {
+            f <- funcao;
+            b <- bloco;
+            lfb <- funcaoEBloco;
+            return ((f,b) : lfb);
+        }
+        <|> return [];
 
+
+funcaoId (id :->: _) = id
+funcaoVar (_ :->: (vars, _)) = vars
+
+retornaFuncao [] = []
+retornaFuncao ((f, _):t) = f : retornaFuncao t
+
+retornaBloco [] = []
+retornaBloco ((_, b):t) = b : retornaBloco t
+
+retornaIdVarBloco :: [(Funcao, Bloco)] -> [(Id, [Var], Bloco)]
+retornaIdVarBloco [] = []
+retornaIdVarBloco ((f,b):t) = (funcaoId f, funcaoVar f, b) : retornaIdVarBloco t
+
+-- data Programa = Prog [Funcao] [(Id, [Var], Bloco)] [Var] Bloco deriving Show
+programa = do
+            lfb <- funcaoEBloco;
+            let lf = retornaFuncao lfb;
+            let idVarBloco = retornaIdVarBloco lfb;
+            b <- bloco;
+            return (Prog lf idVarBloco [] b);
 
 lingDef = emptyDef {
         T.commentStart = "{-"
@@ -147,12 +175,12 @@ semi = T.semi lexico
 comma = T.comma lexico
 commaSep = T.commaSep lexico
 float = T.float lexico
-whiteSpace = T.whiteSpace lexico
+stringLiteral = T.stringLiteral lexico
 
 tabela = [
         [prefix "-" Neg],
         [binario "*" (:*:) AssocLeft, binario "/" (:/:) AssocLeft ],
-        [binario "+" (:*:) AssocLeft, binario "-" (:-:) AssocLeft ]
+        [binario "+" (:+:) AssocLeft, binario "-" (:-:) AssocLeft ]
     ]
 
 tabelaL = [
@@ -171,19 +199,20 @@ expr = buildExpressionParser tabela fator
     <?> "expression"
 
 fator = parens expr
-    <|> try(do {
-        n <- identifier;
-        symbol "(";
-        le<- commaSep expr;
-        symbol ")";
-        return (Chamada n le)})
+    <|> try (do {
+         n <- identifier;
+         symbol "(";
+         le<- commaSep expr;
+         symbol ")";
+         return (Chamada n le)})
     <|> try (do {n <- float; return (Const (CDouble n))})
     <|> do {n <- natural; return (Const (CInt n))}
+    <|> do {n <- stringLiteral; return (Const (CString n))}
     <|> do {n <- identifier; return (IdVar n)}
     <?> "simple expression"
 
-partida :: Parsec String u Comando
-partida = do {e <- comando; eof; return e}
+partida :: Parsec String u Programa
+partida = do {e <- programa; eof; return e}
 
 parserE e = runParser partida [] "Expressoes" e
 
@@ -195,3 +224,9 @@ main = do {putStr "Expressão:";
     hFlush stdout;
     e <- getLine;
     parserExpr e}
+
+-- Ver com o prof
+-- [Var] é para variaveis globais? Quando ler (entre, só antes?)
+-- int x dentro de bloco, quebra. Bloco principal aceita declaração e bloco normal não
+-- precisavamos reconhecer True e False?
+-- int funcao(int x){z=x+1;} int funcao2(int x, int y){z=x+y; return z;} {}
