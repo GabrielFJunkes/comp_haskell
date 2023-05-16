@@ -1,0 +1,4 @@
+int funcao(int x){
+    z=x+1;
+}
+{}

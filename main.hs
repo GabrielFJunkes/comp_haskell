@@ -53,9 +53,7 @@ comando = do {
     }
     <|> try (do {
          n<-identifier;
-         symbol "(";
-         e<-commaSep expr;
-         symbol ")";
+         e<-parens (commaSep expr);
          semi;
          return (Proc n e);
      })
@@ -87,11 +85,7 @@ listaCmd = do {
     <|> return [];
 
 bloco = do {
-        symbol "{";
-
-        cs <- listaCmd;
-        symbol "}";
-        return cs;
+        braces listaCmd;
     }
 
 senao = do {
@@ -117,9 +111,7 @@ var = do {
 funcao = do {
     t <- defineTipo;
     n <- identifier;
-    symbol "(";
-    lv <- commaSep var;
-    symbol ")";
+    lv <- parens (commaSep var);
     return (n :->: (lv, t))
 }
 
@@ -172,10 +164,10 @@ reservedOp = T.reservedOp lexico
 identifier = T.identifier lexico
 reserved = T.reserved lexico
 semi = T.semi lexico
-comma = T.comma lexico
 commaSep = T.commaSep lexico
 float = T.float lexico
 stringLiteral = T.stringLiteral lexico
+braces = T.braces lexico
 
 tabela = [
         [prefix "-" Neg],
@@ -201,9 +193,7 @@ expr = buildExpressionParser tabela fator
 fator = parens expr
     <|> try (do {
          n <- identifier;
-         symbol "(";
-         le<- commaSep expr;
-         symbol ")";
+         le<- parens (commaSep expr);
          return (Chamada n le)})
     <|> try (do {n <- float; return (Const (CDouble n))})
     <|> do {n <- natural; return (Const (CInt n))}
@@ -216,17 +206,26 @@ partida = do {e <- programa; eof; return e}
 
 parserE e = runParser partida [] "Expressoes" e
 
+-- funcao para imprimir Prog com quebra de linha
+printPrograma (Prog listaFuncao listaFuncaoBloco listaVars blocoPrincipal) = do {
+    print "Prog:";
+    print listaFuncao;
+    print listaFuncaoBloco;
+    print listaVars;
+    print blocoPrincipal;
+}
+
 parserExpr s = case parserE s of
     Left er -> print er
-    Right v -> print v
+    Right v -> print v -- printPrograma v
 
-main = do {putStr "Expressão:";
-    hFlush stdout;
-    e <- getLine;
+main = do {
+    putStr "Expressão:";
+    handle <- openFile "test.galu" ReadMode;
+    e <- hGetContents handle;
     parserExpr e}
 
 -- Ver com o prof
 -- [Var] é para variaveis globais? Quando ler (entre, só antes?)
--- int x dentro de bloco, quebra. Bloco principal aceita declaração e bloco normal não
+-- declaração dentro de bloco, quebra. Bloco principal aceita declaração e bloco normal não
 -- precisavamos reconhecer True e False?
--- int funcao(int x){z=x+1;} int funcao2(int x, int y){z=x+y; return z;} {}
