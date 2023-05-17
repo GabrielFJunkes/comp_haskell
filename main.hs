@@ -107,6 +107,26 @@ var = do {
     return (n :#: t);
 }
 
+montaVarsTipo _ [] = []
+montaVarsTipo t (n:ln) = (n :#: t) : montaVarsTipo t ln
+
+varBlocoPrincipal = do {
+    t <- defineTipo;
+    n <- commaSep1 identifier;
+    semi;
+    return (montaVarsTipo t n)
+}
+
+blocoPrincipal' = do {
+    lv <- many varBlocoPrincipal;
+    lc <- listaCmd;
+    return (concat lv, lc)
+}
+
+blocoPrincipal = do {
+    braces blocoPrincipal';
+}
+
 -- data Funcao = Id :->: ([Var], Tipo) deriving Show
 funcao = do {
     t <- defineTipo;
@@ -117,9 +137,9 @@ funcao = do {
 
 funcaoEBloco = do {
             f <- funcao;
-            b <- bloco;
+            lfv <- blocoPrincipal;
             lfb <- funcaoEBloco;
-            return ((f,b) : lfb);
+            return ((f,lfv) : lfb);
         }
         <|> return [];
 
@@ -130,20 +150,23 @@ funcaoVar (_ :->: (vars, _)) = vars
 retornaFuncao [] = []
 retornaFuncao ((f, _):t) = f : retornaFuncao t
 
-retornaBloco [] = []
-retornaBloco ((_, b):t) = b : retornaBloco t
+somaVars [] ys = ys
+somaVars (x:xs) ys = x:somaVars ys xs
 
-retornaIdVarBloco :: [(Funcao, Bloco)] -> [(Id, [Var], Bloco)]
+retornaIdVarBloco :: [(Funcao, ([Var], Bloco))] -> [(Id, [Var], Bloco)]
 retornaIdVarBloco [] = []
-retornaIdVarBloco ((f,b):t) = (funcaoId f, funcaoVar f, b) : retornaIdVarBloco t
+retornaIdVarBloco ((f,(lv, b)):t) = (funcaoId f, somaVars (funcaoVar f) lv, b) : retornaIdVarBloco t
+
+retornaListaVarDeBlocoPrincipal (lv, _) = lv
+retornaBlocoDeBlocoPrincipal (_, b) = b
 
 -- data Programa = Prog [Funcao] [(Id, [Var], Bloco)] [Var] Bloco deriving Show
 programa = do
             lfb <- funcaoEBloco;
             let lf = retornaFuncao lfb;
             let idVarBloco = retornaIdVarBloco lfb;
-            b <- bloco;
-            return (Prog lf idVarBloco [] b);
+            b <- blocoPrincipal;
+            return (Prog lf idVarBloco (retornaListaVarDeBlocoPrincipal b) (retornaBlocoDeBlocoPrincipal b));
 
 lingDef = emptyDef {
         T.commentStart = "{-"
@@ -168,6 +191,7 @@ commaSep = T.commaSep lexico
 float = T.float lexico
 stringLiteral = T.stringLiteral lexico
 braces = T.braces lexico
+commaSep1 = T.commaSep1 lexico
 
 tabela = [
         [prefix "-" Neg],
@@ -206,7 +230,7 @@ partida = do {e <- programa; eof; return e}
 
 parserE e = runParser partida [] "Expressoes" e
 
--- funcao para imprimir Prog com quebra de linha
+-- funcao para imprimir Prog com quebra de linha (para debug)
 printPrograma (Prog listaFuncao listaFuncaoBloco listaVars blocoPrincipal) = do {
     print "Prog:";
     print listaFuncao;
@@ -224,8 +248,3 @@ main = do {
     handle <- openFile "test.galu" ReadMode;
     e <- hGetContents handle;
     parserExpr e}
-
--- Ver com o prof
--- [Var] é para variaveis globais? Quando ler (entre, só antes?)
--- declaração dentro de bloco, quebra. Bloco principal aceita declaração e bloco normal não
--- precisavamos reconhecer True e False?

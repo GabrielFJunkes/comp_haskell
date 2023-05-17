@@ -1,4 +1,12 @@
-int funcao(int x){
+int funcao(int x, int y){
+    int x, y;
+    double x;
     z=x+1;
 }
-{}
+double funcao2(int x){
+    return 1;
+}
+{
+    int x, y, luciano;
+    return x;
+}
