@@ -9,7 +9,7 @@ import System.IO
 type Id = String
 data Tipo = TDouble | TInt | TString | TVoid deriving Show --
 data TCons = CDouble Double | CInt Integer | CString String deriving Show
-data Expr = Expr :+: Expr | Expr :-: Expr | Expr :*: Expr | Expr :/: Expr | Neg Expr | Const TCons | IdVar String | Chamada Id [Expr] | Lit String deriving Show
+data Expr = Expr :+: Expr | Expr :-: Expr | Expr :*: Expr | Expr :/: Expr | Neg Expr | Const TCons | IdVar String | Chamada Id [Expr] | Lit String | IntDouble Expr | DoubleInt Expr  deriving Show
 data ExprR = Expr :==: Expr | Expr :/=: Expr | Expr :<: Expr | Expr :>: Expr | Expr :<=: Expr | Expr :>=: Expr deriving Show
 data ExprL = ExprL :&: ExprL | ExprL :|: ExprL | Not ExprL | Rel ExprR deriving Show
 data Var = Id :#: Tipo deriving Show --
@@ -248,3 +248,18 @@ main = do {
     handle <- openFile "test.galu" ReadMode;
     e <- hGetContents handle;
     parserExpr e}
+
+convert e1@(Const (CInt _)) e2@(Const (CDouble _)) = IntDouble e1
+convert e _ = e
+
+exprIntDouble (e1 :+: e2) = convert e1 e2 :+: convert e2 e1
+exprIntDouble (e1 :-: e2) = convert e1 e2 :-: convert e2 e1
+exprIntDouble (e1 :*: e2) = convert e1 e2 :*: convert e2 e1
+exprIntDouble (e1 :/: e2) = convert e1 e2 :/: convert e2 e1
+
+exprRIntDouble (Rel (e1 :==: e2)) = convert e1 e2 :==: convert e2 e1
+exprRIntDouble (Rel (e1 :/=: e2)) = convert e1 e2 :/=: convert e2 e1
+exprRIntDouble (Rel (e1 :<: e2)) = convert e1 e2 :<: convert e2 e1
+exprRIntDouble (Rel (e1 :>: e2)) = convert e1 e2 :>: convert e2 e1
+exprRIntDouble (Rel (e1 :<=: e2)) = convert e1 e2 :<=: convert e2 e1
+exprRIntDouble (Rel (e1 :>=: e2)) = convert e1 e2 :>=: convert e2 e1
