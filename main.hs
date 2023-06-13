@@ -1,3 +1,4 @@
+-- Gabriel Felipe Junkes e Luciano de Abreu
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use <$>" #-}
 import Text.Parsec
@@ -6,17 +7,9 @@ import qualified Text.Parsec.Token as T
 import Text.Parsec.Language
 import System.IO
 
-type Id = String
-data Tipo = TDouble | TInt | TString | TVoid deriving Show --
-data TCons = CDouble Double | CInt Integer | CString String deriving Show
-data Expr = Expr :+: Expr | Expr :-: Expr | Expr :*: Expr | Expr :/: Expr | Neg Expr | Const TCons | IdVar String | Chamada Id [Expr] | Lit String | IntDouble Expr | DoubleInt Expr  deriving Show
-data ExprR = Expr :==: Expr | Expr :/=: Expr | Expr :<: Expr | Expr :>: Expr | Expr :<=: Expr | Expr :>=: Expr deriving Show
-data ExprL = ExprL :&: ExprL | ExprL :|: ExprL | Not ExprL | Rel ExprR deriving Show
-data Var = Id :#: Tipo deriving Show --
-data Funcao = Id :->: ([Var], Tipo) deriving Show  --
-data Programa = Prog [Funcao] [(Id, [Var], Bloco)] [Var] Bloco deriving Show --
-type Bloco = [Comando]
-data Comando = If ExprL Bloco Bloco | While ExprL Bloco | Atrib Id Expr | Leitura Id | Imp Expr | Ret (Maybe Expr) | Proc Id [Expr] deriving Show
+import DataTypes
+import Semantica
+
 
 exprR = do {
          e1 <- expr;
@@ -221,7 +214,7 @@ fator = parens expr
          return (Chamada n le)})
     <|> try (do {n <- float; return (Const (CDouble n))})
     <|> do {n <- natural; return (Const (CInt n))}
-    <|> do {n <- stringLiteral; return (Const (CString n))}
+    <|> do {n <- stringLiteral; return (Lit n)}
     <|> do {n <- identifier; return (IdVar n)}
     <?> "simple expression"
 
@@ -239,27 +232,27 @@ printPrograma (Prog listaFuncao listaFuncaoBloco listaVars blocoPrincipal) = do 
     print blocoPrincipal;
 }
 
+printSemantica' p = do putStrLn (fst p)
+                       printPrograma (snd p)
+
+printSemantica p = do let sem = semantica p
+                      case sem of
+                        MS p -> printSemantica' p
+
 parserExpr s = case parserE s of
     Left er -> print er
-    Right v -> print v -- printPrograma v
+    Right v -> printSemantica v
 
 main = do {
-    putStr "Expressão:";
     handle <- openFile "test.galu" ReadMode;
     e <- hGetContents handle;
     parserExpr e}
 
-convert e1@(Const (CInt _)) e2@(Const (CDouble _)) = IntDouble e1
-convert e _ = e
+semantica programa@(Prog lFuncao lFuncaoBloco lVars bPrincipal) = do
+  bPrincipal1 <- normalizaDouble lFuncao lFuncaoBloco lVars bPrincipal
+  lFuncaoBloco1 <- normalizaTipoRetorno lFuncao lFuncaoBloco lFuncao lFuncaoBloco
+  bPrincipal3 <- normalizaDoubleR lFuncao lFuncaoBloco1 lVars bPrincipal1
+  return (Prog lFuncao lFuncaoBloco1 lVars bPrincipal3)
 
-exprIntDouble (e1 :+: e2) = convert e1 e2 :+: convert e2 e1
-exprIntDouble (e1 :-: e2) = convert e1 e2 :-: convert e2 e1
-exprIntDouble (e1 :*: e2) = convert e1 e2 :*: convert e2 e1
-exprIntDouble (e1 :/: e2) = convert e1 e2 :/: convert e2 e1
 
-exprRIntDouble (Rel (e1 :==: e2)) = convert e1 e2 :==: convert e2 e1
-exprRIntDouble (Rel (e1 :/=: e2)) = convert e1 e2 :/=: convert e2 e1
-exprRIntDouble (Rel (e1 :<: e2)) = convert e1 e2 :<: convert e2 e1
-exprRIntDouble (Rel (e1 :>: e2)) = convert e1 e2 :>: convert e2 e1
-exprRIntDouble (Rel (e1 :<=: e2)) = convert e1 e2 :<=: convert e2 e1
-exprRIntDouble (Rel (e1 :>=: e2)) = convert e1 e2 :>=: convert e2 e1
+

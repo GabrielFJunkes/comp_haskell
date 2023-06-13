@@ -1,12 +1,21 @@
-int funcao(int x, int y){
-    int x, y;
-    double x;
-    z=x+1;
-}
-double funcao2(int x){
+double funcao(int x, int y){
     return 1;
 }
+int funcao2(int x){
+    return 1.2;
+}
 {
-    int x, y, luciano;
+    double a;
+    int x, y;
+    a = 2;
+    a = 2 + "teste";
+    a = funcao(2.0, funcao2(2.0));
+    if (2 + 1.0 == "teste"){
+        a = 2;
+    }
+    a = x;
+    while(x==a){
+
+    }
     return x;
 }
