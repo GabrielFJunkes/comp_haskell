@@ -1,21 +1,24 @@
-double funcao(int x, int y){
-    return 1;
+int funcao(int x, int y){
+    return 1 + "erro funcao";
 }
 int funcao2(int x){
     return 1.2;
+}
+void retornaVoid(){
 }
 {
     double a;
     int x, y;
     a = 2;
-    a = 2 + "teste";
-    a = funcao(2.0, funcao2(2.0));
-    if (2 + 1.0 == "teste"){
-        a = 2;
+    a = 2 + "erro atrib";
+    a = funcao("" + 2, funcao2(2.0));
+    if (2 + 1.0 == "erro exprL if"){
+        a = 3 + "erro dentro if";
     }
     a = x;
     while(x==a){
-
+        a = 323 + "erro dentro while";
     }
-    return x;
+    a = retornaVoid();
+    return x + "erro return na main";
 }

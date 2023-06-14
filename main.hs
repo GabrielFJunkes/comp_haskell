@@ -248,11 +248,5 @@ main = do {
     e <- hGetContents handle;
     parserExpr e}
 
-semantica programa@(Prog lFuncao lFuncaoBloco lVars bPrincipal) = do
-  bPrincipal1 <- normalizaDouble lFuncao lFuncaoBloco lVars bPrincipal
-  lFuncaoBloco1 <- normalizaTipoRetorno lFuncao lFuncaoBloco lFuncao lFuncaoBloco
-  bPrincipal3 <- normalizaDoubleR lFuncao lFuncaoBloco1 lVars bPrincipal1
-  return (Prog lFuncao lFuncaoBloco1 lVars bPrincipal3)
-
 
 

@@ -1,6 +1,7 @@
 module Semantica where
 
 import DataTypes
+import Control.Monad (unless)
 
 red = "\x1b[31m"
 yellow = "\x1b[33m"
@@ -21,20 +22,25 @@ instance Monad Semantica where
 erro s = MS (red    ++ "Error: "    ++ reset ++ s ++ "\n", ())
 adv s = MS (yellow ++ "Warning: "  ++ reset ++ s ++ "\n", ())
 
-verificaParametros [] [] _ _ = return []
-verificaParametros (elem:xs) ((_:#:tipo):tipos) listaVars listaFuncoes = do{
-                    transformedElem <- if tipo==TDouble then
-                        transformaDouble elem listaVars listaFuncoes
-                    else if tipo==TInt then
-                        transformaInt elem listaVars listaFuncoes elem
-                    else
-                        return [elem]
-                    transformedRest <- verificaParametros xs tipos listaVars listaFuncoes;
-                    return (transformedElem : transformedRest)
-}
-getTipoParams _ [] = []
-getTipoParams nome ((nomeFuncao :->: (listaVars,_)):funcoes) = if nome==nomeFuncao then listaVars else getTipoParams nome funcoes
+semantica programa@(Prog lFuncao lFuncaoBloco lVars bPrincipal) = do
+  bPrincipal1 <- normalizaDouble lFuncao lFuncaoBloco lVars bPrincipal
+  lFuncaoBloco1 <- normalizaTipoRetorno lFuncao lFuncaoBloco lFuncao lFuncaoBloco
+  bPrincipal3 <- normalizaDoubleR lFuncao lFuncaoBloco1 lVars bPrincipal1
+  msgDeErroSo <- verificaTipoIncExpr lFuncao lFuncaoBloco1 lVars bPrincipal3
+  msgDeErroSo <- verificaTipoIncExprFuncao lFuncao lFuncaoBloco1 lFuncao lFuncaoBloco1
+  return (Prog lFuncao lFuncaoBloco1 lVars bPrincipal3)
 
+verificaParametros [] [] _ _ = return []
+verificaParametros (elem:xs) ((_:#:tipo):tipos) listaVars listaFuncoes = do {
+                     transformedElem <- if tipo==TDouble then
+                         transformaDouble elem listaVars listaFuncoes
+                     else if tipo==TInt then
+                         transformaInt elem listaVars listaFuncoes elem
+                     else
+                         return elem;
+                     transformedRest <- verificaParametros xs tipos listaVars listaFuncoes;
+                     return (transformedElem : transformedRest)
+ }
 
 transformaDouble (e1 :+: e2) listaVars listaFuncoes = do
                                                     transformedE1 <- transformaDouble e1 listaVars listaFuncoes;
@@ -73,7 +79,6 @@ transformaDouble e@(IdVar nome) listaVars listaFuncoes = do {
         return $ IntDouble e;
      }
 transformaDouble e@(Lit str) listaVars listaFuncoes = do {
-    erro "Tipo incompatível entre double e string";
     return e;
 }
 
@@ -103,7 +108,7 @@ transformaInt e@(Const (CDouble _)) _ _ elemCompleto = do {
      }
 transformaInt e@(Const (CInt _)) _ _ elemCompleto = return e
 transformaInt e@(Chamada nome lExpr) listaVars listaFuncoes elemCompleto = do {
-        transformedLExpr <- verificaParametros lExpr (getTipoParams nome listaFuncoes) listaVars listaFuncoes elemCompleto;
+        transformedLExpr <- verificaParametros lExpr (getTipoParams nome listaFuncoes) listaVars listaFuncoes;
         if verificaSeDeclaracaoFuncaoDouble nome listaFuncoes then
             return (DoubleInt (Chamada nome transformedLExpr));
         else
@@ -116,22 +121,136 @@ transformaInt e@(IdVar nome) listaVars listaFuncoes elemCompleto = do {
         return e;
      }
 transformaInt e@(Lit str) listaVars listaFuncoes elemCompleto = do {
-    traduzidoE <- traduzExpr elemCompleto;
-    erro ("Tipo incompatível entre int e string em: "++traduzidoE);
     return e;
 }
 
 normalizaDouble _ _ _ [] = return []
-normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain (elem@(Atrib nome e):xs) =
+normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain (elem@(Atrib nome e):xs) = do
     if verificaSeDeclaracaoDouble nome declaracaoMain then do
         transformedE <- transformaDouble e declaracaoMain declaracoesFuncao
         normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain xs >>= \rest -> return (Atrib nome transformedE : rest)
     else do
         transformedE <- transformaInt e declaracaoMain declaracoesFuncao e
         normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain xs >>= \rest -> return (Atrib nome transformedE : rest)
-normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain (elem:xs) =
-    normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain xs >>=
-        \rest -> return (elem : rest)
+normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain (elem:xs) = do
+    normalizaDouble declaracoesFuncao blocosFuncoes declaracaoMain xs >>= \rest -> return (elem : rest)
+
+verificaTipoIncExprFuncao [] [] _ _ = return []
+verificaTipoIncExprFuncao (y:ys) ((_,declaracoes,bloco):xs) declaracoesFuncao blocosFuncoes = do {
+    elem <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracoes bloco;
+    rest <- verificaTipoIncExprFuncao ys xs declaracoesFuncao blocosFuncoes;
+    return (elem : rest)
+}
+
+verificaTipoIncExpr _ _ _ [] = return []
+verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (elem@(Atrib nome e):xs) = do
+    case getTipoVar nome declaracaoMain of
+        Just tipo -> do {
+             compartivel <- verificaTipoComExpr e tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+             if not compartivel then do
+                 traduzidoE <- traduzExpr e
+                 erro ("Tipos incompatíveis em: " ++ nome ++ " = " ++ traduzidoE ++ ";")
+                 rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs
+                 return (elem : rest)
+             else do
+                 rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs
+                 return (elem : rest)
+             }
+        Nothing -> do
+            traduzidoE <- traduzExpr e
+            erro ("Variavel " ++ nome ++ " não definida em: " ++ nome ++ " = " ++ traduzidoE ++ ";")
+            rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs
+            return (elem : rest)
+verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (elem@(If _ bloco blocoElse):xs) = do
+    discart1 <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain bloco;
+    discart2 <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain blocoElse;
+    rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs;
+    return (elem : rest);
+verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (elem@(While _ bloco):xs) = do
+    discart1 <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain bloco;
+    rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs;
+    return (elem : rest);
+verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (elem@(Ret (Just exp)):xs) = do
+            primeiroTipo <- getPriTipoComExpr exp declaracoesFuncao blocosFuncoes declaracaoMain;
+            compartivel <- verificaTipoComExpr exp primeiroTipo declaracoesFuncao blocosFuncoes declaracaoMain;
+            if not compartivel then do
+                traduzidoE <- traduzExpr exp
+                erro ("Tipos incompatíveis em: return " ++ traduzidoE ++ ";")
+                rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs
+                return (elem : rest)
+            else do
+                rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs
+                return (elem : rest)
+verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (x:xs) = do {
+     adv (show x);
+     rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs;
+     return (x : rest);
+ }
+
+verificaTipoComExpr (e1 :+: e2) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- verificaTipoComExpr e1 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- verificaTipoComExpr e2 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 && transformedE2);
+                                                     }
+verificaTipoComExpr (e1 :-: e2) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- verificaTipoComExpr e1 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- verificaTipoComExpr e2 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 && transformedE2);
+                                                     }
+verificaTipoComExpr (e1 :*: e2) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- verificaTipoComExpr e1 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- verificaTipoComExpr e2 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 && transformedE2);
+                                                     }
+verificaTipoComExpr (e1 :/: e2) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- verificaTipoComExpr e1 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- verificaTipoComExpr e2 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 && transformedE2);
+                                                     }
+verificaTipoComExpr (Neg e) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         verificaTipoComExpr e tipo declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                     }
+verificaTipoComExpr e@(Const (CDouble _)) tipo _ _ _ = return (tipo==TDouble || tipo==TInt)
+verificaTipoComExpr e@(Const (CInt _)) tipo _ _ _ = return (tipo==TDouble || tipo==TInt)
+verificaTipoComExpr e@(Chamada nome params) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    paramsCompativel <- verificaTipoParams params declaracoesFuncao blocosFuncoes declaracaoMain;
+    paramsTraduzido <- traduzExprComoParams params;
+    unless paramsCompativel (erro ("Tipos incompatíveis nos parametros da funcão: "++nome++"( "++paramsTraduzido++" )"));
+    tipoFuncao <- getTipoFuncao nome declaracoesFuncao;
+    if (tipoFuncao==TDouble || tipoFuncao==TInt) then
+        return (tipo==TDouble || tipo==TInt)
+    else
+        return (tipo==TString)
+ }
+verificaTipoComExpr e@(IdVar nome) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
+     tipoVar <- getTipoVar nome declaracaoMain;
+     if (tipoVar==TDouble || tipoVar==TInt) then
+         return (tipo==TDouble || tipo==TInt)
+     else
+         return (tipo==TString)
+ }
+verificaTipoComExpr e@(Lit _) tipo _ _ _ = return (tipo==TString)
+verificaTipoComExpr e tipo _ _ _ = return (tipo==TDouble || tipo==TInt) -- IntDouble ou DoubleInt (mesma logica que double ou int)
+
+verificaTipoParams [] _ _ _ = return True
+verificaTipoParams (x:xs) declaracoesFuncao blocosFuncoes declaracao = do {
+     tipo <- getPriTipoComExpr x declaracoesFuncao blocosFuncoes declaracao;
+     resu <- verificaTipoComExpr x tipo declaracoesFuncao blocosFuncoes declaracao;
+     rest <- verificaTipoParams xs declaracoesFuncao blocosFuncoes declaracao;
+     return (rest && resu)
+ }
+
+getPriTipoComExpr (e1 :+: e2) declaracoesFuncao blocosFuncoes declaracaoMain = getPriTipoComExpr e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+getPriTipoComExpr (e1 :-: e2) declaracoesFuncao blocosFuncoes declaracaoMain = getPriTipoComExpr e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+getPriTipoComExpr (e1 :*: e2) declaracoesFuncao blocosFuncoes declaracaoMain = getPriTipoComExpr e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+getPriTipoComExpr (e1 :/: e2) declaracoesFuncao blocosFuncoes declaracaoMain = getPriTipoComExpr e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+getPriTipoComExpr (Neg e) declaracoesFuncao blocosFuncoes declaracaoMain = getPriTipoComExpr e declaracoesFuncao blocosFuncoes declaracaoMain
+getPriTipoComExpr e@(Const (CDouble _)) _ _ _ = return TDouble
+getPriTipoComExpr e@(Const (CInt _)) _ _ _ = return TInt
+getPriTipoComExpr e@(Chamada nome _) declaracoesFuncao blocosFuncoes declaracaoMain = getTipoFuncao nome declaracoesFuncao
+getPriTipoComExpr e@(IdVar nome) declaracoesFuncao blocosFuncoes declaracaoMain = getTipoVar nome declaracaoMain
+getPriTipoComExpr e@(Lit _) _ _ _ = return TString
+getPriTipoComExpr e _ _ _ = return TInt
 
 -- 1 parte retorno
 normalizaTipoRetorno [] [] _ _ = return []
@@ -410,9 +529,27 @@ traduzExpr (Neg e) = do {
                     }
 traduzExpr e@(Const (CDouble v)) = return (show v)
 traduzExpr e@(Const (CInt v)) = return (show v)
-traduzExpr e@(Chamada nome v) = do{
-    translatedV <- mapM traduzExpr v;
-    return (nome++"("++unwords translatedV++")")
-}
+traduzExpr e@(Chamada nome v) = do {
+     translatedV <- mapM traduzExpr v;
+     return (nome++"("++unwords translatedV++")")
+ }
 traduzExpr e@(IdVar nome) = return nome;
 traduzExpr e@(Lit v) = return ("'"++v++"'");
+traduzExpr e@(IntDouble e1) = do { traduzExpr e1; }
+traduzExpr e@(DoubleInt e1) = do { traduzExpr e1; }
+
+traduzExprComoParams [] = return ""
+traduzExprComoParams (x:[]) = do {
+     traduzExpr x;
+ }
+traduzExprComoParams (x:xs) = do {
+     traduzidoE <- traduzExpr x;
+     rest <- traduzExprComoParams xs;
+     return (traduzidoE ++ ", " ++ rest)
+ }
+
+getTipoVar nome ((_ :#: tipo):restoDec) = return tipo
+
+getTipoParams nome ((nomeFuncao :->: (listaVars,_)):funcoes) = if nome==nomeFuncao then listaVars else getTipoParams nome funcoes
+
+getTipoFuncao nome ((nomeFuncao :->: (_,tipo)):funcoes) = if nome==nomeFuncao then return tipo else getTipoFuncao nome funcoes
