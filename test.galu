@@ -1,24 +1,31 @@
 int funcao(int x, int y){
     return 1 + "erro funcao";
 }
-int funcao2(int x){
-    return 1.2;
+int funcao2(int x, int x){
+    return z;
+}
+int funcao2(){
+    return 1;
 }
 void retornaVoid(){
 }
 {
     double a;
     int x, y;
+    z = 2.2;
     a = 2;
+    a = "";
     a = 2 + "erro atrib";
-    a = funcao("" + 2, funcao2(2.0));
+    a = funcao("" + 2, funcao2(2.0), 1);
     if (2 + 1.0 == "erro exprL if"){
-        a = 3 + "erro dentro if";
+        x = 2.0;
     }
     a = x;
+    x = z;
     while(x==a){
-        a = 323 + "erro dentro while";
+        a = funcaoNExiste();
     }
     a = retornaVoid();
     return x + "erro return na main";
+    
 }
