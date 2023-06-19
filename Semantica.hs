@@ -84,10 +84,10 @@ transformaDouble e@(Const (CInt _)) _ _ = do {
 }
 transformaDouble e@(Chamada nome lExpr) listaVars listaFuncoes = do {
     transformedLExpr <- verificaParametros lExpr (getTipoParams nome listaFuncoes) listaVars listaFuncoes;
-    if verificaSeDeclaracaoFuncaoDouble nome listaFuncoes then
-        return (IntDouble (Chamada nome transformedLExpr))
-    else
-        return (Chamada nome transformedLExpr)
+    if verificaSeDeclaracaoFuncaoDouble nome listaFuncoes then do
+        return (Chamada nome transformedLExpr);
+    else do
+        return (IntDouble (Chamada nome transformedLExpr));
 }
 transformaDouble e@(IdVar nome) listaVars listaFuncoes = do {
     if verificaSeDeclaracaoDouble nome listaVars then
@@ -124,9 +124,9 @@ transformaInt e@(Const (CDouble _)) _ _ elemCompleto = do {
 transformaInt e@(Const (CInt _)) _ _ elemCompleto = return e
 transformaInt e@(Chamada nome lExpr) listaVars listaFuncoes elemCompleto = do {
         transformedLExpr <- verificaParametros lExpr (getTipoParams nome listaFuncoes) listaVars listaFuncoes;
-        if verificaSeDeclaracaoFuncaoDouble nome listaFuncoes then
+        if verificaSeDeclaracaoFuncaoDouble nome listaFuncoes then do
             return (DoubleInt (Chamada nome transformedLExpr));
-        else
+        else do
             return (Chamada nome transformedLExpr);
     }
 transformaInt e@(IdVar nome) listaVars listaFuncoes elemCompleto = do {
@@ -190,6 +190,9 @@ verificaDoubleInt declaracoesFuncao blocosFuncoes declaracaoMain (elem@(While _ 
      verificaDoubleInt declaracoesFuncao blocosFuncoes declaracaoMain bloco onde;
      verificaDoubleInt declaracoesFuncao blocosFuncoes declaracaoMain xs onde >>= \rest -> return (elem : rest);
  }
+verificaDoubleInt declaracoesFuncao blocosFuncoes declaracaoMain (_:xs) onde = do {
+    verificaDoubleInt declaracoesFuncao blocosFuncoes declaracaoMain xs onde;
+}
 
 repeteFuncao _ [] = return False
 repeteFuncao funcao (e@(nomeFuncao :->: _):xs) = if nomeFuncao==funcao then return True else repeteFuncao funcao xs
@@ -431,7 +434,17 @@ verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (elem@(If _ b
     discart2 <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain blocoElse;
     rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs;
     return (elem : rest);
-verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (elem@(While _ bloco):xs) = do
+verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (elem@(While cExprL bloco):xs) = do
+    lista <- getListaTiposExprL cExprL declaracoesFuncao blocosFuncoes declaracaoMain;
+    saoCompativeis <- listaTiposCompativel lista;
+    if not saoCompativeis then do
+        traduzidoE <- traduzExprL cExprL;
+        erro ("Tipos incompatíveis dentro do while ( "++ traduzidoE++" )")
+        rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs
+        return (elem : rest)
+    else do
+        rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs
+        return (elem : rest)
     discart1 <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain bloco;
     rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs;
     return (elem : rest);
@@ -450,6 +463,126 @@ verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain (x:xs) = do {
      rest <- verificaTipoIncExpr declaracoesFuncao blocosFuncoes declaracaoMain xs;
      return (x : rest);
 }
+
+listaTiposCompativel' tipo [] = return True
+listaTiposCompativel' tipo (x:xs) = do {
+     if tipo==TDouble || tipo==TInt then
+         if x==TString || x==TVoid then
+             return False
+         else
+             listaTiposCompativel' tipo xs
+     else if (tipo==TString) then
+         if (x==TDouble || x==TInt || x==TVoid) then
+             return False
+         else
+             listaTiposCompativel' tipo xs
+     else
+         if (x/=TVoid) then
+             return False
+         else
+             listaTiposCompativel' tipo xs
+ }
+
+listaTiposCompativel [] = return True
+listaTiposCompativel (tipo:rest) = do{
+    elem <- listaTiposCompativel' tipo rest;
+    rest <- listaTiposCompativel rest;
+    return (elem && rest)
+}
+
+getListaTiposExprL (e1 :&: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                            transformedE1 <- getListaTiposExprL e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                            transformedE2 <- getListaTiposExprL e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                            return (transformedE1 ++ transformedE2)
+                                                         }
+getListaTiposExprL (e1 :|: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                            transformedE1 <- getListaTiposExprL e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                            transformedE2 <- getListaTiposExprL e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                            return (transformedE1 ++ transformedE2)
+                                                         }
+getListaTiposExprL (Not e) declaracoesFuncao blocosFuncoes declaracaoMain =  do {
+                                                            getListaTiposExprL e declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         }
+getListaTiposExprL (Rel expR) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    getListaTiposExprR expR declaracoesFuncao blocosFuncoes declaracaoMain
+}
+
+getListaTiposExprR e@(e1 :==: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    res1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+    res2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+    return (res1 ++ res2)
+ }
+getListaTiposExprR e@(e1 :/=: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    res1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+    res2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+    return (res1 ++ res2)
+ }
+getListaTiposExprR e@(e1 :<=: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    res1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+    res2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+    return (res1 ++ res2)
+ }
+getListaTiposExprR e@(e1 :>=: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    res1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+    res2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+    return (res1 ++ res2)
+ }
+getListaTiposExprR e@(e1 :<: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    res1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+    res2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+    return (res1 ++ res2)
+ }
+getListaTiposExprR e@(e1 :>: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    res1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+    res2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+    return (res1 ++ res2)
+ }
+
+getTipoExp (e1 :+: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 ++ transformedE2);
+                                                     }
+getTipoExp (e1 :-: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 ++ transformedE2);
+                                                     }
+getTipoExp (e1 :*: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 ++ transformedE2);
+                                                     }
+getTipoExp (e1 :/: e2) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         transformedE1 <- getTipoExp e1 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         transformedE2 <- getTipoExp e2 declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                         return (transformedE1 ++ transformedE2);
+                                                     }
+getTipoExp (Neg e) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+                                                         getTipoExp e declaracoesFuncao blocosFuncoes declaracaoMain;
+                                                     }
+getTipoExp e@(Const (CDouble _)) _ _ _ = return [TDouble]
+getTipoExp e@(Const (CInt _)) _ _ _ = return [TInt]
+getTipoExp e@(Chamada nome params) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    paramsCompativel <- verificaTipoParams params declaracoesFuncao blocosFuncoes declaracaoMain;
+    paramsTraduzido <- traduzExprComoParams params;
+    unless paramsCompativel (erro ("Tipos incompatíveis nos parametros da função: "++nome++"( "++paramsTraduzido++" )"));
+    quantParams <- getQuantidadeParams nome declaracoesFuncao;
+    when (quantParams > length params) (erro ("Quantidade a menos de parametros na chamada da função: "++nome++"( "++paramsTraduzido++" )"));
+    when (quantParams < length params) (erro ("Quantidade a mais de parametros na chamada da função: "++nome++"( "++paramsTraduzido++" )"));
+    tipoFuncao <- getTipoFuncao nome declaracoesFuncao;
+    case tipoFuncao of
+        Just tipoFuncao -> return [TVoid];
+        Nothing -> return [TVoid];
+
+ }
+getTipoExp e@(IdVar nome) declaracoesFuncao blocosFuncoes declaracaoMain = do {
+    tipoVar <- getTipoVar nome declaracaoMain;
+    return [tipoVar]
+ }
+getTipoExp e@(Lit _) _ _ _ = return [TString]
+getTipoExp e@(IntDouble elem) _ _ _ = return [TDouble]
+getTipoExp e _ _ _ = return [TInt]
 
 verificaTipoComExpr (e1 :+: e2) tipo declaracoesFuncao blocosFuncoes declaracaoMain = do {
                                                          transformedE1 <- verificaTipoComExpr e1 tipo declaracoesFuncao blocosFuncoes declaracaoMain;
@@ -783,6 +916,54 @@ verificaSeDeclaracaoFuncaoInt _ [] = False
 verificaSeDeclaracaoFuncaoInt var (nome :->: (_,TInt):xs) = (var == nome) || verificaSeDeclaracaoFuncaoInt var xs
 verificaSeDeclaracaoFuncaoInt var (x:xs) = verificaSeDeclaracaoFuncaoInt var xs
 
+traduzExprL (e1 :&: e2) = do {
+                                                            transformedE1 <- traduzExprL e1;
+                                                            transformedE2 <- traduzExprL e2;
+                                                            return (transformedE1 ++ "&" ++ transformedE2)
+                                                         }
+traduzExprL (e1 :|: e2) = do {
+                                                            transformedE1 <- traduzExprL e1;
+                                                            transformedE2 <- traduzExprL e2;
+                                                            return (transformedE1 ++ "|" ++ transformedE2)
+                                                         }
+traduzExprL (Not e) =  do {
+                                                            traduzExprL e;
+                                                         }
+traduzExprL (Rel expR) = do {
+    traduzExprR expR
+}
+
+traduzExprR e@(e1 :==: e2) = do {
+    res1 <- traduzExpr e1;
+    res2 <- traduzExpr e2;
+    return (res1 ++ "==" ++ res2)
+ }
+traduzExprR e@(e1 :/=: e2) = do {
+    res1 <- traduzExpr e1;
+    res2 <- traduzExpr e2;
+    return (res1 ++ "/=" ++ res2)
+ }
+traduzExprR e@(e1 :<=: e2) = do {
+    res1 <- traduzExpr e1;
+    res2 <- traduzExpr e2;
+    return (res1 ++ "<=" ++ res2)
+ }
+traduzExprR e@(e1 :>=: e2) = do {
+    res1 <- traduzExpr e1;
+    res2 <- traduzExpr e2;
+    return (res1 ++ ">=" ++ res2)
+ }
+traduzExprR e@(e1 :<: e2) = do {
+    res1 <- traduzExpr e1;
+    res2 <- traduzExpr e2;
+    return (res1 ++ "<" ++ res2)
+ }
+traduzExprR e@(e1 :>: e2) = do {
+    res1 <- traduzExpr e1;
+    res2 <- traduzExpr e2;
+    return (res1 ++ ">" ++ res2)
+ }
+
 traduzExpr (e1 :+: e2) = do {
                             transformedE1 <- traduzExpr e1;
                             transformedE2 <- traduzExpr e2;
@@ -830,6 +1011,8 @@ traduzExprComoParams (x:xs) = do {
 getTipoVar _ [] = return TVoid
 getTipoVar nome ((nomeVar :#: tipo):restoDec) = if nomeVar==nome then return tipo else getTipoVar nome restoDec;
 
+
+getTipoParams _ [] = []
 getTipoParams nome ((nomeFuncao :->: (listaVars,_)):funcoes) = if nome==nomeFuncao then listaVars else getTipoParams nome funcoes
 
 getTipoFuncao nome [] = return Nothing
